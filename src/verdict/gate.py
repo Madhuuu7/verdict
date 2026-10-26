@@ -158,6 +158,10 @@ class GateReport:
     #: the gate uses a variance-adaptive boundary instead.
     sequential_subgaussian: SequentialResult | None = None
     primary: str = "rubric score"
+    #: Which judge produced the grades. Stored with the run, because the most
+    #: confusing failure in eval history is a judge swap that shifts every
+    #: score at once and reads as a pipeline regression.
+    judge: str = "judge"
     elapsed_s: float = 0.0
     reason: str = ""
     config: GateConfig = field(default_factory=GateConfig)
@@ -531,6 +535,7 @@ def run_gate(
         sequential_peeking=seq_peek,
         sequential_fixed=seq_fixed,
         sequential_subgaussian=seq_subgaussian,
+        judge=getattr(judge, "name", "judge"),
         elapsed_s=time.perf_counter() - started,
         reason=reason,
         config=config,

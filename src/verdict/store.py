@@ -82,6 +82,9 @@ class HistoryRow:
     effect: float
     ci: tuple[float, float]
     kappa: float
+    #: The judge that produced the grades, so a step change in the metrics can
+    #: be checked against a change in the instrument.
+    judge: str
     flagged: int
     n_cases: int
     n_used: int
@@ -124,7 +127,7 @@ class Store:
                         report.n_cases,
                         report.comparisons,
                         len(report.flagged),
-                        getattr(report.calibration, "note", "") or "judge",
+                        report.judge,
                         cal.weighted_kappa,
                         cal.weighted_kappa_ci[0],
                         cal.ceiling or 0.0,
@@ -169,7 +172,7 @@ class Store:
         with self._lock:
             rows = self._conn.execute(
                 "SELECT run_id, created_ms, label, suite, verdict, effect, ci_lo,"
-                " ci_hi, kappa, flagged, n_cases, n_used, stopped_early"
+                " ci_hi, kappa, flagged, n_cases, n_used, stopped_early, judge"
                 " FROM runs ORDER BY created_ms DESC, run_id DESC LIMIT ?",
                 (limit,),
             ).fetchall()
@@ -187,6 +190,7 @@ class Store:
                 n_cases=r[10],
                 n_used=r[11],
                 stopped_early=bool(r[12]),
+                judge=r[13],
             )
             for r in rows
         ]
@@ -218,8 +222,8 @@ class Store:
         with self._lock:
             row = self._conn.execute(
                 "SELECT run_id, created_ms, suite, label, verdict, reason, n_cases,"
-                " comparisons, flagged, kappa, kappa_lo, ceiling, effect, ci_lo,"
-                " ci_hi, n_used, stopped_early, elapsed_s"
+                " comparisons, flagged, judge, kappa, kappa_lo, ceiling, effect,"
+                " ci_lo, ci_hi, n_used, stopped_early, elapsed_s"
                 " FROM runs WHERE run_id = ?",
                 (run_id,),
             ).fetchone()
@@ -232,7 +236,8 @@ class Store:
             ).fetchall()
         keys = (
             "run_id created_ms suite label verdict reason n_cases comparisons flagged"
-            " kappa kappa_lo ceiling effect ci_lo ci_hi n_used stopped_early elapsed_s"
+            " judge kappa kappa_lo ceiling effect ci_lo ci_hi n_used stopped_early"
+            " elapsed_s"
         ).split()
         out = dict(zip(keys, row))
         out["metrics"] = [

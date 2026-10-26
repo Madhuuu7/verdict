@@ -1,0 +1,35 @@
+# Render blueprint for the free tier.
+#
+# Two things about the free plan that this file has to live with:
+#
+# * **The disk is ephemeral.** `verdict.db` is written next to the process and
+#   is gone on every restart and redeploy, so the run history is a session's
+#   worth, not a record. A Render disk (paid) or a Postgres store would fix
+#   it; the store's schema is ordinary SQL and would port.
+# * **The service sleeps after 15 idle minutes** and takes a cold start to
+#   wake, so the first gate run after a quiet spell is slower than the second.
+#
+# The build runs the quick validation study so the console's "measured, not
+# claimed" panel has real numbers on the deployed instance. It adds about 15
+# seconds to a build and is the difference between the page citing its error
+# rates and showing them.
+services:
+  - type: web
+    name: verdict
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -e .
+      python scripts/validate.py --quick
+    startCommand: uvicorn verdict.api.app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.13.1"
+      # The console and the validation report are found by searching upward
+      # for web/index.html, which works for the editable install above. This
+      # pins it anyway, because a 404 on the console is a silent failure.
+      - key: VERDICT_ROOT
+        value: /opt/render/project/src

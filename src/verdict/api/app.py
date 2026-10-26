@@ -25,6 +25,7 @@ reason this is a service rather than a script.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Literal
 
@@ -43,7 +44,27 @@ from ..stats.multiplicity import Correction
 from ..stats.sequential import SequentialResult
 from ..store import Store
 
-ROOT = Path(__file__).resolve().parents[3]
+def _find_root() -> Path:
+    """Locate the repo root by looking for the console, not by counting
+    parents.
+
+    ``parents[3]`` is right for a source checkout and wrong everywhere else:
+    installed non-editably the module sits in site-packages, and three levels
+    up is a directory with no ``web/`` in it, so the console 404s on the
+    deployed service while every test passes locally. ``VERDICT_ROOT`` is the
+    escape hatch for a layout neither of those covers.
+    """
+    override = os.environ.get("VERDICT_ROOT")
+    if override:
+        return Path(override)
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / "web" / "index.html").is_file():
+            return parent
+    return here.parents[3]
+
+
+ROOT = _find_root()
 WEB = ROOT / "web"
 VALIDATION = ROOT / "reports" / "validation.json"
 

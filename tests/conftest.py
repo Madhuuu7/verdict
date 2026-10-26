@@ -25,12 +25,20 @@ from verdict import (
 
 @pytest.fixture(scope="session")
 def suite():
-    return synthetic_suite(240)
+    """600 cases, which at the default 0.5 label fraction is 286 human
+    labels -- just past the ~280 the judge needs before its agreement can be
+    *certified* rather than merely estimated. On a 240-case suite the gate
+    correctly abstains on every input, which is the right behaviour and a
+    useless fixture to assert verdicts against.
+    """
+    return synthetic_suite(600)
 
 
 @pytest.fixture(scope="session")
-def small_suite():
-    return synthetic_suite(60, name="small")
+def thin_suite():
+    """240 cases: 116 labels, not enough to certify the judge. The fixture
+    for the abstain path."""
+    return synthetic_suite(240, name="thin")
 
 
 @pytest.fixture(scope="session")
@@ -89,3 +97,15 @@ def report_slice_broken(suite, judge, annotators):
 @pytest.fixture(scope="session")
 def report_latency(suite, judge, annotators):
     return gate_for("latency", 0.25, suite, judge, annotators)
+
+
+@pytest.fixture(scope="session")
+def report_abstain(thin_suite, judge, annotators):
+    return gate_for("quality", 0.12, thin_suite, judge, annotators)
+
+
+@pytest.fixture(scope="session")
+def report_improvement(suite, judge, annotators):
+    """A candidate that is *better*: a negative severity adds quality rather
+    than subtracting it."""
+    return gate_for("quality", -0.12, suite, judge, annotators)

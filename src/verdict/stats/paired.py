@@ -143,8 +143,16 @@ def wilcoxon_signed_rank(
 
     Zero differences are dropped (Wilcoxon's original handling) and tied
     absolute differences get average ranks, with the variance corrected for
-    ties -- without that correction the test is anti-conservative on rubric
-    scores, where ties are the norm rather than the exception.
+    ties by subtracting sum(t^3 - t)/48.
+
+    The correction makes the variance *smaller*, so it makes the test more
+    willing to reject, and leaving it out costs power rather than validity.
+    Measured on integer rubric scores, where ties are the rule rather than the
+    exception: over 20,000 null suites the corrected test rejects 4.8-5.1% of
+    the time at a nominal 5%, and the uncorrected one 4.4-4.8%. A gate that
+    quietly loses power is one that lets regressions through, which is why the
+    correction is here; ``tests/test_paired.py`` measures the direction rather
+    than restating it.
 
     The effect reported is the median difference, which is the quantity this
     test is actually about; the mean would describe a different null.

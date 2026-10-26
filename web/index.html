@@ -1,0 +1,980 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>verdict</title>
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #161b22;
+    --panel-2: #1c2230;
+    --line: #2a313c;
+    --ink: #e6edf3;
+    --muted: #8b98a8;
+    --dim: #5d6b7d;
+    --pass: #3fb950;
+    --regression: #f85149;
+    --inconclusive: #d29922;
+    --abstain: #a371f7;
+    --accent: #58a6ff;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.55 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); }
+  header {
+    border-bottom: 1px solid var(--line); padding: 20px 28px;
+    display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap;
+  }
+  header h1 {
+    margin: 0; font: 600 20px/1 var(--mono); letter-spacing: -0.3px; flex: none;
+  }
+  header p {
+    margin: 0; color: var(--muted); font-size: 13.5px;
+    /* flex-basis, not max-width: in a flex row max-width lets the paragraph
+       collapse to a narrow column beside the title instead of filling it. */
+    flex: 1 1 42ch; max-width: 92ch;
+  }
+  main { padding: 24px 28px 64px; max-width: 1280px; }
+  section { margin-bottom: 28px; }
+  h2 {
+    font: 600 12px/1 var(--sans); letter-spacing: 0.09em; text-transform: uppercase;
+    color: var(--dim); margin: 0 0 12px;
+  }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 18px;
+  }
+  .grid { display: grid; gap: 16px; }
+  .controls { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); align-items: end; }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+  select, input[type=number] {
+    width: 100%; background: var(--panel-2); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 6px; padding: 8px 9px;
+    font: 13px var(--mono);
+  }
+  .check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink); }
+  button {
+    background: var(--accent); color: #06101f; border: 0; border-radius: 6px;
+    padding: 10px 18px; font: 600 14px var(--sans); cursor: pointer;
+  }
+  button:disabled { opacity: 0.55; cursor: progress; }
+  button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+
+  /* verdict banner */
+  #verdict { display: flex; gap: 18px; align-items: flex-start; }
+  .badge {
+    font: 700 13px/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 9px 12px; border-radius: 6px; white-space: nowrap;
+  }
+  .badge.pass { background: rgba(63,185,80,.13); color: var(--pass); border: 1px solid rgba(63,185,80,.35); }
+  .badge.regression { background: rgba(248,81,73,.13); color: var(--regression); border: 1px solid rgba(248,81,73,.35); }
+  .badge.inconclusive { background: rgba(210,153,34,.13); color: var(--inconclusive); border: 1px solid rgba(210,153,34,.35); }
+  .badge.abstain { background: rgba(163,113,247,.13); color: var(--abstain); border: 1px solid rgba(163,113,247,.35); }
+  .badge.idle { background: var(--panel-2); color: var(--dim); border: 1px solid var(--line); }
+  #verdict .why { font-size: 14px; }
+  #verdict .why .reason { color: var(--muted); margin-top: 5px; display: block; }
+
+  /* stat strip */
+  .stats { grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); }
+  .stat { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 11px 13px; }
+  .stat b { display: block; font: 600 19px/1.2 var(--mono); }
+  .stat span { font-size: 11.5px; color: var(--muted); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    text-align: left; font: 600 11px/1 var(--sans); letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--dim);
+    padding: 0 10px 9px; border-bottom: 1px solid var(--line);
+  }
+  td { padding: 8px 10px; border-bottom: 1px solid rgba(42,49,60,.5); font-family: var(--mono); font-size: 12.5px; }
+  td.name { font-family: var(--sans); font-size: 13px; }
+  tr.flagged td { background: rgba(248,81,73,.07); }
+  tr.flagged td.name { color: var(--regression); font-weight: 600; }
+  tr.lost td.name::after {
+    content: " uncorrected only"; color: var(--inconclusive);
+    font-size: 11px; font-weight: 400;
+  }
+  .num { text-align: right; }
+  .worse { color: var(--regression); }
+  .better { color: var(--pass); }
+
+  .two { grid-template-columns: 1.35fr 1fr; }
+  @media (max-width: 900px) { .two { grid-template-columns: 1fr; } }
+
+  /* kappa bar */
+  .kbar { position: relative; height: 30px; background: var(--panel-2); border-radius: 5px; margin: 14px 0 6px; }
+  .kbar .range { position: absolute; top: 7px; height: 16px; background: rgba(88,166,255,.3); border-radius: 3px; }
+  .kbar .point { position: absolute; top: 3px; width: 2px; height: 24px; background: var(--accent); }
+  .kbar .mark { position: absolute; top: 0; width: 2px; height: 30px; }
+  .kbar .mark.req { background: var(--regression); }
+  .kbar .mark.ceil { background: var(--pass); }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 11.5px; color: var(--muted); }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; }
+
+  /* confusion */
+  .confusion { border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+  .confusion td, .confusion th { border: 1px solid var(--line); padding: 5px 8px; text-align: center; }
+
+  /* chart */
+  svg { width: 100%; height: auto; display: block; }
+  .ax { stroke: var(--line); stroke-width: 1; }
+  .axlabel { fill: var(--dim); font: 10px var(--mono); }
+  .band { opacity: 0.14; }
+  .line { fill: none; stroke-width: 1.8; }
+  .margin-line { stroke: var(--regression); stroke-dasharray: 4 3; stroke-width: 1; }
+  .zero-line { stroke: var(--dim); stroke-width: 1; }
+  .stopmark { stroke-width: 1.4; stroke-dasharray: 3 2; }
+
+  .note { color: var(--muted); font-size: 12.5px; margin: 10px 0 0; max-width: 78ch; }
+  .note code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  .err { color: var(--regression); font-family: var(--mono); font-size: 13px; }
+  .pill { font: 11px var(--mono); color: var(--muted); border: 1px solid var(--line); border-radius: 99px; padding: 2px 8px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .spin { display: inline-block; width: 11px; height: 11px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .fade { animation: fade .35s ease both; }
+  @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>verdict</h1>
+  <p>
+    A regression gate for LLM pipelines. It calibrates the judge against human
+    labels before trusting it, pairs every comparison on the case, controls the
+    false discovery rate across the whole family of metrics, and stops early
+    with an interval that is valid at every sample size.
+  </p>
+</header>
+
+<main>
+  <section>
+    <h2>Run</h2>
+    <div class="panel">
+      <div class="grid controls">
+        <div>
+          <label for="preset">Regression shape</label>
+          <select id="preset"></select>
+        </div>
+        <div>
+          <label for="n_cases">Cases</label>
+          <input id="n_cases" type="number" value="600" min="20" max="4000" step="20">
+        </div>
+        <div>
+          <label for="tolerance">Margin (rubric points)</label>
+          <input id="tolerance" type="number" value="0.05" min="0" max="2" step="0.05">
+        </div>
+        <div>
+          <label for="alpha">Alpha</label>
+          <input id="alpha" type="number" value="0.05" min="0.001" max="0.4" step="0.01">
+        </div>
+        <div>
+          <label for="correction">Correction</label>
+          <select id="correction">
+            <option value="bh">Benjamini-Hochberg (FDR)</option>
+            <option value="holm">Holm (FWER)</option>
+          </select>
+        </div>
+        <div>
+          <label for="label_fraction">Labelled fraction</label>
+          <input id="label_fraction" type="number" value="0.5" min="0.05" max="1" step="0.05">
+        </div>
+        <div>
+          <label class="check"><input id="slice_by_tag" type="checkbox" checked> Slice by tag</label>
+        </div>
+        <div><button id="run">Run gate</button></div>
+      </div>
+      <p class="note" id="runnote">
+        The pipelines are simulated, deliberately: an error rate can only be
+        measured against a known truth, and a real model cannot tell you
+        whether there was really no regression.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Verdict</h2>
+    <div class="panel" id="verdict">
+      <span class="badge idle" id="badge">no run yet</span>
+      <span class="why" id="why">Pick a regression shape and run the gate.</span>
+    </div>
+  </section>
+
+  <section id="statsection" hidden>
+    <h2>At a glance</h2>
+    <div class="grid stats" id="stats"></div>
+  </section>
+
+  <section id="chartsection" hidden>
+    <h2>Stopping early, valid and invalid</h2>
+    <div class="panel">
+      <div id="chart"></div>
+      <div class="legend" id="chartlegend"></div>
+      <p class="note" id="chartnote"></p>
+    </div>
+  </section>
+
+  <section id="metricsection" hidden>
+    <h2>Comparisons</h2>
+    <div class="panel">
+      <table id="metrics"></table>
+      <p class="note" id="metricnote"></p>
+    </div>
+  </section>
+
+  <section id="calsection" hidden>
+    <h2>Is the judge good enough to rule?</h2>
+    <div class="grid two">
+      <div class="panel" id="calpanel"></div>
+      <div class="panel" id="confusionpanel"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>History</h2>
+    <div class="panel">
+      <table id="history"><tbody><tr><td class="name">No runs recorded yet.</td></tr></tbody></table>
+    </div>
+  </section>
+
+  <section id="validationsection" hidden>
+    <h2>Measured, not claimed</h2>
+    <div class="panel" id="validation"></div>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+/* ------------------------------------------------------------------ *
+ * Pure helpers. Everything that turns a report into text or geometry
+ * lives here and touches no DOM, so scripts/check_console.mjs can run
+ * it headlessly against canned API responses -- the console's numbers
+ * are the part worth testing, and a browser is not needed to test them.
+ * ------------------------------------------------------------------ */
+
+const V = {};
+
+V.fmtP = function (p) {
+  if (p === null || p === undefined) return "--";
+  if (p < 0.001) return "<0.001";
+  if (p < 0.01) return p.toFixed(4);
+  return p.toFixed(3);
+};
+
+V.fmtNum = function (x, digits) {
+  if (x === null || x === undefined || Number.isNaN(x)) return "--";
+  const d = digits === undefined ? 3 : digits;
+  return (x >= 0 ? "+" : "") + x.toFixed(d);
+};
+
+V.fmtPct = function (x) {
+  if (x === null || x === undefined) return "--";
+  return (x * 100).toFixed(0) + "%";
+};
+
+V.fmtCi = function (ci, digits) {
+  if (!ci || ci[0] === null || ci[1] === null) return "unbounded";
+  const d = digits === undefined ? 3 : digits;
+  return "[" + ci[0].toFixed(d) + ", " + ci[1].toFixed(d) + "]";
+};
+
+/** The headline: what the verdict means, in the words of this run. */
+V.verdictCopy = function (report) {
+  const tone = report.verdict;
+  const titles = {
+    pass: "pass",
+    regression: "regression",
+    inconclusive: "inconclusive",
+    abstain: "abstain",
+  };
+  const leads = {
+    pass: "The candidate is at worst negligibly worse.",
+    regression: "The candidate is worse by more than the margin.",
+    inconclusive: "This suite does not resolve the question.",
+    abstain: "The judge was not certified, so nothing was tested.",
+  };
+  let lead = leads[tone] || "";
+  if (tone === "inconclusive" && report.resolvable_margin) {
+    lead +=
+      " With these cases it could have certified non-inferiority to within " +
+      report.resolvable_margin.toFixed(3) +
+      " rubric points, and no finer.";
+  }
+  if (tone === "abstain") {
+    lead +=
+      " It had " +
+      report.calibration.n +
+      " human labels; about " +
+      report.labels_to_certify +
+      " are needed before this judge's agreement can be proven rather than" +
+      " estimated.";
+  }
+  return { title: titles[tone] || tone, tone: tone, lead: lead, reason: report.reason };
+};
+
+/** The stat strip: the six numbers worth reading first. */
+V.statTiles = function (report) {
+  const seq = report.sequential;
+  const tiles = [
+    { label: "cases judged", value: seq.n_used + " / " + seq.n_available },
+    {
+      label: "model calls saved",
+      value: V.fmtPct(seq.saved_fraction),
+    },
+    { label: "primary effect", value: V.fmtNum(report.sequential_fixed.effect) },
+    { label: "comparisons", value: String(report.comparisons) },
+    {
+      label:
+        "flagged after " +
+        (report.correction.method === "holm" ? "Holm" : "BH") +
+        " (" + report.flagged_uncorrected.length + " uncorrected)",
+      value: String(report.flagged.length),
+    },
+    {
+      label: "false alarm if uncorrected",
+      value: V.fmtPct(report.correction.family_error_if_uncorrected),
+    },
+  ];
+  return tiles;
+};
+
+/** One table row per comparison, in the order the gate made them. */
+V.metricRows = function (report) {
+  return report.metrics.map(function (m) {
+    const lost = !m.flagged && m.flagged_uncorrected;
+    return {
+      label: m.label,
+      kind: m.kind,
+      baseline: m.baseline,
+      candidate: m.candidate,
+      delta: m.delta,
+      direction: m.worse ? "worse" : "better",
+      p_raw: m.p_value === undefined ? m.test.p_value : m.p_value,
+      p_adjusted: m.p_adjusted,
+      threshold: m.threshold,
+      ci: m.test.ci,
+      flagged: m.flagged,
+      lostToCorrection: lost,
+      detail: m.test.detail,
+      informative: m.test.informative,
+    };
+  });
+};
+
+V.metricNote = function (report) {
+  const lost = report.flagged_uncorrected.filter(function (label) {
+    return report.flagged.indexOf(label) === -1;
+  });
+  let note =
+    report.comparisons +
+    " comparisons, corrected together at alpha/2 = " +
+    report.correction.alpha.toFixed(4) +
+    ". The other half of the budget pays for the right to stop early.";
+  if (lost.length) {
+    note +=
+      " " +
+      lost.length +
+      " comparison" + (lost.length === 1 ? "" : "s") +
+      " would have been flagged uncorrected and did not survive: " +
+      lost.join(", ") + ".";
+  } else {
+    note += " No comparison was lost to the correction on this run.";
+  }
+  return note;
+};
+
+/** The y-range the chart needs: every finite bound, plus the margin. */
+V.domain = function (curves, tolerance) {
+  let lo = -tolerance, hi = tolerance;
+  curves.forEach(function (curve) {
+    (curve.steps || []).forEach(function (s) {
+      [s.lower, s.upper, s.mean].forEach(function (v) {
+        if (v === null || v === undefined || !Number.isFinite(v)) return;
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+      });
+    });
+  });
+  // Clamp: the first steps of a confidence sequence are enormous, and a
+  // chart scaled to them shows four flat lines at zero.
+  const clamp = 2.0;
+  lo = Math.max(lo, -clamp);
+  hi = Math.min(hi, clamp);
+  const pad = (hi - lo) * 0.08 || 0.1;
+  return { lo: lo - pad, hi: hi + pad };
+};
+
+V.scales = function (domain, nMax, width, height, pad) {
+  return {
+    x: function (n) { return pad.l + (n / nMax) * (width - pad.l - pad.r); },
+    y: function (v) {
+      const clamped = Math.max(domain.lo, Math.min(domain.hi, v));
+      return (
+        pad.t +
+        (1 - (clamped - domain.lo) / (domain.hi - domain.lo)) *
+          (height - pad.t - pad.b)
+      );
+    },
+  };
+};
+
+/** An SVG path along one key of a step curve. */
+V.path = function (steps, key, scales) {
+  let d = "";
+  (steps || []).forEach(function (s) {
+    const v = s[key];
+    if (v === null || v === undefined || !Number.isFinite(v)) return;
+    d += (d ? "L" : "M") + scales.x(s.n).toFixed(1) + " " + scales.y(v).toFixed(1);
+  });
+  return d;
+};
+
+/** The shaded interval between a curve's bounds. */
+V.band = function (steps, scales) {
+  const usable = (steps || []).filter(function (s) {
+    return Number.isFinite(s.lower) && Number.isFinite(s.upper);
+  });
+  if (!usable.length) return "";
+  let up = "", down = "";
+  usable.forEach(function (s, i) {
+    up += (i ? "L" : "M") + scales.x(s.n).toFixed(1) + " " + scales.y(s.upper).toFixed(1);
+  });
+  for (let i = usable.length - 1; i >= 0; i--) {
+    const s = usable[i];
+    down += "L" + scales.x(s.n).toFixed(1) + " " + scales.y(s.lower).toFixed(1);
+  }
+  return up + down + "Z";
+};
+
+V.chartCurves = function (report) {
+  const curves = [
+    {
+      key: "sequential",
+      name: "empirical-Bernstein sequence (the gate)",
+      colour: "#58a6ff",
+      data: report.sequential,
+      band: true,
+    },
+    {
+      key: "peeking",
+      name: "peeking after every case (invalid)",
+      colour: "#f85149",
+      data: report.sequential_peeking,
+      band: false,
+    },
+  ];
+  if (report.sequential_subgaussian) {
+    curves.push({
+      key: "subgaussian",
+      name: "sub-Gaussian sequence, sigma=4 (honest, unusable)",
+      colour: "#8b98a8",
+      data: report.sequential_subgaussian,
+      band: false,
+    });
+  }
+  return curves;
+};
+
+V.chartNote = function (report) {
+  const seq = report.sequential;
+  const peek = report.sequential_peeking;
+  const parts = [];
+  if (seq.decision !== "inconclusive") {
+    parts.push(
+      "The always-valid interval settled the question at case " +
+        seq.n_used +
+        " of " +
+        seq.n_available +
+        ", leaving " +
+        seq.saved +
+        " cases unjudged."
+    );
+  } else {
+    parts.push(
+      "The always-valid interval never cleared the margin, so the whole suite ran."
+    );
+  }
+  if (peek.decision !== "inconclusive") {
+    parts.push(
+      "Peeking called it " +
+        peek.decision +
+        " at case " +
+        peek.n_used +
+        " -- earlier, and not a free lunch: the same rule fires on unchanged" +
+        " pipelines 46.7% of the time (measured over 1,500 null runs)."
+    );
+  } else {
+    parts.push("Peeking did not resolve this run either.");
+  }
+  if (report.sequential_subgaussian &&
+      report.sequential_subgaussian.decision === "inconclusive") {
+    parts.push(
+      "The sub-Gaussian boundary is the honest Hoeffding proxy for a bounded" +
+        " rubric difference, and it resolves nothing at this scale -- which is" +
+        " why the gate uses the variance-adaptive one."
+    );
+  }
+  return parts.join(" ");
+};
+
+/** Where the judge sits between zero, its bar, and the ceiling. */
+V.kappaGeometry = function (cal) {
+  const max = Math.max(1.0, (cal.ceiling || 0) + 0.05);
+  const place = function (v) { return Math.max(0, Math.min(100, (v / max) * 100)); };
+  const ci = cal.weighted_kappa_ci;
+  return {
+    max: max,
+    point: place(cal.weighted_kappa),
+    lo: place(ci && ci[0] !== null ? ci[0] : cal.weighted_kappa),
+    hi: place(ci && ci[1] !== null ? ci[1] : cal.weighted_kappa),
+    required: place(cal.required),
+    ceiling: cal.ceiling ? place(cal.ceiling) : null,
+  };
+};
+
+V.calibrationLines = function (report) {
+  const cal = report.calibration;
+  const lines = [
+    {
+      label: "weighted kappa vs annotator A",
+      value: cal.weighted_kappa.toFixed(3) + "  " + V.fmtCi(cal.weighted_kappa_ci, 2),
+    },
+    {
+      label: "inter-annotator ceiling (A vs B)",
+      value: (cal.ceiling || 0).toFixed(3),
+    },
+    {
+      label: "share of the ceiling",
+      value: cal.relative ? V.fmtPct(cal.relative) : "--",
+    },
+    { label: "required (" + V.fmtPct(cal.threshold) + " of ceiling)", value: cal.required.toFixed(3) },
+    { label: "human labels", value: String(cal.n) },
+    { label: "unweighted kappa", value: cal.kappa.toFixed(3) },
+    {
+      label: "a judge that always says 4",
+      value: report.constant_judge_kappa.toFixed(3),
+    },
+    {
+      label: "judge bias (positive = generous)",
+      value: V.fmtNum(cal.bias, 2) + " grades",
+    },
+    { label: "exact / within one grade", value: V.fmtPct(cal.exact_agreement) + " / " + V.fmtPct(cal.within_one) },
+  ];
+  return lines;
+};
+
+V.calibrationVerdict = function (report) {
+  const cal = report.calibration;
+  if (cal.trustworthy) {
+    return (
+      "Certified: the lower bound of the interval, " +
+      (cal.weighted_kappa_ci[0] || 0).toFixed(3) +
+      ", clears the " +
+      cal.required.toFixed(3) +
+      " bar, so the gate may rule. The bar is tested on the lower bound" +
+      " because a point estimate from a few dozen labels cannot tell 0.58" +
+      " from 0.68."
+    );
+  }
+  return (
+    "Not certified: the lower bound " +
+    (cal.weighted_kappa_ci[0] || 0).toFixed(3) +
+    " is below the " +
+    cal.required.toFixed(3) +
+    " bar, so the gate abstains rather than rule on an instrument it has" +
+    " not checked. The judge is not necessarily bad -- at " +
+    V.fmtPct(cal.relative || 0) +
+    " of the ceiling it is close to a second annotator. There are just not" +
+    " enough labels to prove it."
+  );
+};
+
+V.historyRows = function (rows) {
+  return rows.map(function (r) {
+    return {
+      run_id: r.run_id,
+      when: new Date(r.created_ms).toLocaleTimeString(),
+      label: r.label,
+      verdict: r.verdict,
+      effect: V.fmtNum(r.effect),
+      ci: V.fmtCi(r.ci),
+      kappa: r.kappa.toFixed(2),
+      judge: r.judge,
+      flagged: r.flagged,
+      cases: r.n_used + "/" + r.n_cases,
+    };
+  });
+};
+
+V.validationLines = function (v) {
+  if (!v || !v.peeking) return [];
+  const lines = [];
+  Object.keys(v.peeking).forEach(function (name) {
+    lines.push({
+      label: name,
+      value: V.fmtPct(v.peeking[name].error_rate) + " false alarms under the null",
+    });
+  });
+  if (v.multiplicity) {
+    lines.push({
+      label: v.multiplicity.comparisons + " comparisons, uncorrected",
+      value: V.fmtPct(v.multiplicity.uncorrected_alpha) + " chance of a false alarm",
+    });
+    lines.push({
+      label: "the same, after Benjamini-Hochberg",
+      value: V.fmtPct(v.multiplicity.benjamini_hochberg),
+    });
+  }
+  if (v.pairing) {
+    lines.push({
+      label: "paired vs unpaired detection of a -0.15 effect",
+      value:
+        V.fmtPct(v.pairing.paired_power) + " vs " + V.fmtPct(v.pairing.unpaired_power),
+    });
+  }
+  if (v.calibration && v.calibration.certified_from) {
+    lines.push({
+      label: "labels before the judge can be certified",
+      value: String(v.calibration.certified_from),
+    });
+  }
+  return lines;
+};
+
+if (typeof module !== "undefined" && module.exports) module.exports = V;
+if (typeof window !== "undefined") window.VERDICT = V;
+
+/* ------------------------------------------------------------------ *
+ * DOM wiring.
+ * ------------------------------------------------------------------ */
+
+if (typeof document !== "undefined" && document.getElementById) {
+  const $ = function (id) { return document.getElementById(id); };
+  const esc = function (s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  };
+
+  const api = async function (path, options) {
+    const response = await fetch(path, options);
+    if (!response.ok) {
+      let detail = response.status + " " + response.statusText;
+      try {
+        const body = await response.json();
+        if (body.detail) detail = typeof body.detail === "string"
+          ? body.detail : JSON.stringify(body.detail);
+      } catch (e) { /* not JSON; keep the status line */ }
+      throw new Error(detail);
+    }
+    return response.json();
+  };
+
+  const renderVerdict = function (report) {
+    const copy = V.verdictCopy(report);
+    $("badge").className = "badge " + copy.tone;
+    $("badge").textContent = copy.title;
+    $("why").innerHTML =
+      esc(copy.lead) + '<span class="reason">' + esc(copy.reason) + "</span>";
+    $("verdict").classList.remove("fade");
+    void $("verdict").offsetWidth;
+    $("verdict").classList.add("fade");
+  };
+
+  const renderStats = function (report) {
+    $("stats").innerHTML = V.statTiles(report)
+      .map(function (tile) {
+        return (
+          '<div class="stat"><b>' + esc(tile.value) + "</b><span>" +
+          esc(tile.label) + "</span></div>"
+        );
+      })
+      .join("");
+    $("statsection").hidden = false;
+  };
+
+  const renderMetrics = function (report) {
+    const rows = V.metricRows(report);
+    const head =
+      "<thead><tr><th>comparison</th><th class='num'>baseline</th>" +
+      "<th class='num'>candidate</th><th class='num'>delta</th>" +
+      "<th class='num'>p</th><th class='num'>p adjusted</th>" +
+      "<th class='num'>bar</th><th>interval on the effect</th></tr></thead>";
+    const body = rows
+      .map(function (r) {
+        const cls = r.flagged ? "flagged" : r.lostToCorrection ? "lost" : "";
+        return (
+          "<tr class='" + cls + "'>" +
+          "<td class='name'>" + esc(r.label) + "</td>" +
+          "<td class='num'>" + r.baseline.toFixed(3) + "</td>" +
+          "<td class='num'>" + r.candidate.toFixed(3) + "</td>" +
+          "<td class='num " + r.direction + "'>" + V.fmtNum(r.delta) + "</td>" +
+          "<td class='num'>" + V.fmtP(r.p_raw) + "</td>" +
+          "<td class='num'>" + V.fmtP(r.p_adjusted) + "</td>" +
+          "<td class='num'>" + V.fmtP(r.threshold) + "</td>" +
+          "<td>" + esc(V.fmtCi(r.ci)) + "</td>" +
+          "</tr>"
+        );
+      })
+      .join("");
+    $("metrics").innerHTML = head + "<tbody>" + body + "</tbody>";
+    $("metricnote").textContent = V.metricNote(report);
+    $("metricsection").hidden = false;
+  };
+
+  const renderChart = function (report) {
+    const width = 980, height = 320, pad = { l: 54, r: 14, t: 14, b: 34 };
+    const curves = V.chartCurves(report);
+    const domain = V.domain(curves.map(function (c) { return c.data; }),
+                            report.config.tolerance);
+    const nMax = report.sequential.n_available;
+    const scales = V.scales(domain, nMax, width, height, pad);
+
+    let svg =
+      '<svg viewBox="0 0 ' + width + " " + height + '" role="img" ' +
+      'aria-label="confidence sequences over the suite">';
+
+    // axes and gridlines
+    svg += '<line class="ax" x1="' + pad.l + '" y1="' + (height - pad.b) +
+           '" x2="' + (width - pad.r) + '" y2="' + (height - pad.b) + '"/>';
+    svg += '<line class="ax" x1="' + pad.l + '" y1="' + pad.t +
+           '" x2="' + pad.l + '" y2="' + (height - pad.b) + '"/>';
+    const ticks = 4;
+    for (let i = 0; i <= ticks; i++) {
+      const v = domain.lo + ((domain.hi - domain.lo) * i) / ticks;
+      const y = scales.y(v);
+      svg += '<line class="ax" x1="' + pad.l + '" y1="' + y.toFixed(1) +
+             '" x2="' + (width - pad.r) + '" y2="' + y.toFixed(1) +
+             '" opacity="0.4"/>';
+      svg += '<text class="axlabel" x="6" y="' + (y + 3).toFixed(1) + '">' +
+             v.toFixed(2) + "</text>";
+    }
+    for (let i = 0; i <= 4; i++) {
+      const n = Math.round((nMax * i) / 4);
+      svg += '<text class="axlabel" text-anchor="middle" x="' +
+             scales.x(n).toFixed(1) + '" y="' + (height - 12) + '">' + n +
+             "</text>";
+    }
+
+    // the margin and zero
+    svg += '<line class="zero-line" x1="' + pad.l + '" y1="' + scales.y(0).toFixed(1) +
+           '" x2="' + (width - pad.r) + '" y2="' + scales.y(0).toFixed(1) + '"/>';
+    const margin = -report.config.tolerance;
+    svg += '<line class="margin-line" x1="' + pad.l + '" y1="' +
+           scales.y(margin).toFixed(1) + '" x2="' + (width - pad.r) + '" y2="' +
+           scales.y(margin).toFixed(1) + '"/>';
+    svg += '<text class="axlabel" x="' + (pad.l + 6) + '" y="' +
+           (scales.y(margin) - 5).toFixed(1) + '">margin ' + margin.toFixed(2) +
+           "</text>";
+
+    curves.forEach(function (curve) {
+      if (curve.band) {
+        const band = V.band(curve.data.steps, scales);
+        if (band) {
+          svg += '<path class="band" d="' + band + '" fill="' + curve.colour + '"/>';
+        }
+      }
+      ["lower", "upper"].forEach(function (key) {
+        const d = V.path(curve.data.steps, key, scales);
+        if (d) {
+          svg += '<path class="line" d="' + d + '" stroke="' + curve.colour +
+                 '" opacity="' + (curve.band ? 0.95 : 0.7) + '"/>';
+        }
+      });
+      if (curve.data.decision !== "inconclusive") {
+        const x = scales.x(curve.data.n_used).toFixed(1);
+        svg += '<line class="stopmark" x1="' + x + '" y1="' + pad.t + '" x2="' + x +
+               '" y2="' + (height - pad.b) + '" stroke="' + curve.colour + '"/>';
+      }
+    });
+
+    svg += "</svg>";
+    $("chart").innerHTML = svg;
+    $("chartlegend").innerHTML = curves
+      .map(function (c) {
+        const stop = c.data.decision === "inconclusive"
+          ? "never resolved"
+          : c.data.decision + " at " + c.data.n_used;
+        return '<span><i style="background:' + c.colour + '"></i>' +
+               esc(c.name) + " &mdash; " + esc(stop) + "</span>";
+      })
+      .join("");
+    $("chartnote").textContent = V.chartNote(report);
+    $("chartsection").hidden = false;
+  };
+
+  const renderCalibration = function (report) {
+    const cal = report.calibration;
+    const geo = V.kappaGeometry(cal);
+    const lines = V.calibrationLines(report)
+      .map(function (l) {
+        return (
+          "<tr><td class='name'>" + esc(l.label) + "</td><td class='num'>" +
+          esc(l.value) + "</td></tr>"
+        );
+      })
+      .join("");
+    $("calpanel").innerHTML =
+      '<div class="kbar">' +
+      '<div class="range" style="left:' + geo.lo + "%;width:" +
+      Math.max(0.5, geo.hi - geo.lo) + '%"></div>' +
+      '<div class="point" style="left:' + geo.point + '%"></div>' +
+      (geo.ceiling !== null
+        ? '<div class="mark ceil" style="left:' + geo.ceiling + '%"></div>'
+        : "") +
+      '<div class="mark req" style="left:' + geo.required + '%"></div>' +
+      "</div>" +
+      '<div class="legend">' +
+      '<span><i style="background:#58a6ff"></i>judge, with its 95% interval</span>' +
+      '<span><i style="background:#f85149"></i>the bar it must clear</span>' +
+      '<span><i style="background:#3fb950"></i>inter-annotator ceiling</span>' +
+      "</div>" +
+      "<table style='margin-top:14px'><tbody>" + lines + "</tbody></table>" +
+      '<p class="note">' + esc(V.calibrationVerdict(report)) + "</p>";
+
+    let confusion =
+      "<table class='confusion'><thead><tr><th>human \\ judge</th>";
+    for (let g = 1; g <= 5; g++) confusion += "<th>" + g + "</th>";
+    confusion += "</tr></thead><tbody>";
+    cal.confusion.forEach(function (row, i) {
+      confusion += "<tr><th>" + (i + 1) + "</th>";
+      row.forEach(function (count, j) {
+        const diag = i === j;
+        confusion +=
+          "<td style='" +
+          (count ? "color:var(--ink);" : "color:var(--dim);") +
+          (diag ? "background:rgba(63,185,80,.10)" : "") +
+          "'>" + count + "</td>";
+      });
+      confusion += "</tr>";
+    });
+    confusion += "</tbody></table>";
+    $("confusionpanel").innerHTML =
+      "<h2 style='margin-top:0'>Where the judge and the human differ</h2>" +
+      confusion +
+      '<p class="note">Rows are the human grade, columns the judge\'s. Mass ' +
+      "off the diagonal but adjacent to it is a rounding difference, which is " +
+      "what the quadratic weighting forgives; mass in the far corners means " +
+      "the judge is not reading the answer.</p>";
+    $("calsection").hidden = false;
+  };
+
+  const renderHistory = function (rows) {
+    if (!rows.length) return;
+    const head =
+      "<thead><tr><th>#</th><th>when</th><th>run</th><th>verdict</th>" +
+      "<th class='num'>effect</th><th>interval</th><th class='num'>kappa</th>" +
+      "<th>judge</th><th class='num'>flagged</th><th class='num'>cases</th>" +
+      "</tr></thead>";
+    const body = V.historyRows(rows)
+      .map(function (r) {
+        return (
+          "<tr><td class='num'>" + r.run_id + "</td><td>" + esc(r.when) +
+          "</td><td class='name'>" + esc(r.label) + "</td>" +
+          "<td class='name'><span class='pill'>" + esc(r.verdict) + "</span></td>" +
+          "<td class='num'>" + esc(r.effect) + "</td><td>" + esc(r.ci) +
+          "</td><td class='num'>" + esc(r.kappa) + "</td><td>" + esc(r.judge) +
+          "</td><td class='num'>" + r.flagged + "</td><td class='num'>" +
+          esc(r.cases) + "</td></tr>"
+        );
+      })
+      .join("");
+    $("history").innerHTML = head + "<tbody>" + body + "</tbody>";
+  };
+
+  const renderValidation = function (v) {
+    const lines = V.validationLines(v);
+    if (!lines.length) return;
+    $("validation").innerHTML =
+      "<table><tbody>" +
+      lines
+        .map(function (l) {
+          return (
+            "<tr><td class='name'>" + esc(l.label) + "</td><td class='num'>" +
+            esc(l.value) + "</td></tr>"
+          );
+        })
+        .join("") +
+      "</tbody></table>" +
+      '<p class="note">From <code>scripts/validate.py</code>' +
+      (v.quick ? " (quick run)" : "") +
+      ", over thousands of simulated experiments with a known truth. Every " +
+      "error rate this console quotes is one of these, not a citation.</p>";
+    $("validationsection").hidden = false;
+  };
+
+  const loadPresets = async function () {
+    const presets = await api("/api/presets");
+    $("preset").innerHTML = presets
+      .map(function (p) {
+        return (
+          '<option value="' + esc(p.name) + '">' + esc(p.name) + " &mdash; " +
+          esc(p.description) + "</option>"
+        );
+      })
+      .join("");
+    $("preset").value = "clear quality drop";
+  };
+
+  const run = async function () {
+    const button = $("run");
+    button.disabled = true;
+    button.innerHTML = '<span class="spin"></span> running';
+    $("why").innerHTML = "Running both variants, judging, calibrating&hellip;";
+    try {
+      const report = await api("/api/gate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          preset: $("preset").value,
+          n_cases: Number($("n_cases").value),
+          tolerance: Number($("tolerance").value),
+          alpha: Number($("alpha").value),
+          label_fraction: Number($("label_fraction").value),
+          correction: $("correction").value,
+          slice_by_tag: $("slice_by_tag").checked,
+          label: $("preset").value,
+        }),
+      });
+      renderVerdict(report);
+      renderStats(report);
+      renderChart(report);
+      renderMetrics(report);
+      renderCalibration(report);
+      renderHistory(await api("/api/history?limit=20"));
+    } catch (err) {
+      $("badge").className = "badge regression";
+      $("badge").textContent = "error";
+      $("why").innerHTML = '<span class="err">' + esc(err.message) + "</span>";
+    } finally {
+      button.disabled = false;
+      button.textContent = "Run gate";
+    }
+  };
+
+  window.addEventListener("DOMContentLoaded", async function () {
+    try {
+      await loadPresets();
+      renderHistory(await api("/api/history?limit=20"));
+      try {
+        renderValidation(await api("/api/validation"));
+      } catch (e) {
+        /* the study has not been run; the console works without it */
+      }
+    } catch (err) {
+      $("why").innerHTML = '<span class="err">' + esc(err.message) + "</span>";
+    }
+    $("run").addEventListener("click", run);
+  });
+}
+</script>
+</body>
+</html>
